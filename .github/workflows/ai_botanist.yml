@@ -1,0 +1,37 @@
+name: AI 植物学家在线识别
+
+on:
+  issues:
+    types: [opened, edited]  # 当您新建 Issue 或修改 Issue 时触发
+
+permissions:
+  issues: write  # 允许 AI 在 Issue 下方留言回复
+  contents: write  # 允许 AI 修改仓库文件（如后续自动归档）
+
+jobs:
+  identify-plant:
+    if: contains(github.event.issue.title, '识别') || contains(github.event.issue.body, '![image]')
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安装 AI 核心依赖
+        run: |
+          pip install google-generativeai requests
+
+      - name: 启动大模型替身进行识别
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          REPOSITORY: ${{ github.repository }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python ai_identifier.py
