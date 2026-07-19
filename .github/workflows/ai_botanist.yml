@@ -25,22 +25,19 @@ jobs:
           python-version: '3.10'
 
       - name: 安装 AI 核心依赖
-        # 必须加 --upgrade，保证下载到最新版 Gemini 库，能识别新格式
+        # 【关键修改】安装了 vertexai 和 google-cloud-aiplatform
         run: |
-          pip install --upgrade google-generativeai requests
+          pip install --upgrade google-cloud-aiplatform vertexai requests
 
       - name: 启动大模型替身进行识别
-        # 设置 5 分钟超时，防止网络卡死导致 Action 失败
+        # 防止网络卡死，设置5分钟超时
         timeout-minutes: 5
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 优先读取最新评论内容，如果没有评论则读取 Issue 主楼内容
           ISSUE_BODY: ${{ github.event.comment.body || github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
-          # 关键：使用系统内置 Token，无需你在 Secrets 里配置 GITHUB_TOKEN
           GITHUB_TOKEN: ${{ github.token }}
-          # 关键：传入评论者的名字，用于 Python 脚本防止机器人自己回复自己导致死循环
           COMMENTER_USER: ${{ github.event.comment.user.login || '' }}
         run: |
           python ai_identifier.py
