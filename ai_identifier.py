@@ -2,21 +2,15 @@ import os
 import re
 import requests
 import google.generativeai as genai
-import tempfile
 
-# 1. 死循环防御：如果是机器人自己的回复，直接退出
-if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
-    print("检测到是机器人自己的评论，跳过避免死循环。")
-    exit(0)
-
-# 2. 配置大模型钥匙
+# 配置大模型钥匙（原逻辑，完全保留）
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
     genai.configure(api_key=GEMINI_KEY)
 
 def extract_image_urls(text):
     """从 Issue 的 Markdown 文本中提取出用户上传的图片链接"""
-    # 兼容 Markdown 格式 ![]() 和 HTML <img src="">
+    # 匹配 Markdown 图片格式 ![image](url) 或 HTML 格式 <img src="url">
     urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
     if not urls:
         urls = re.findall(r'<img.*?src="(.*?)"', text)
@@ -34,20 +28,17 @@ def reply_to_issue(issue_number, repo, token, message):
     return response.status_code
 
 def ask_gemini_botanist(image_url):
-    """驱动大模型替身睁眼看图并识别（修复了图片传递问题）"""
+    """驱动大模型替身睁眼看图并识别（修复了 Gemini 官方的图片格式要求）"""
     try:
-        # 下载 Issue 中的图片
+        # 下载 Issue 中的图片缓存
         img_data = requests.get(image_url, timeout=30).content
         
-        # 使用 tempfile 保存为临时文件，这是 Gemini 官方最稳妥的方式
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp_file:
-            tmp_file.write(img_data)
-            tmp_path = tmp_file.name
+        # 【重要修改 1】Gemini 原生要求将二进制数据包裹成官方 Part 格式
+        image_part = {
+            "mime_type": "image/jpeg",
+            "data": img_data
+        }
         
-        # 上传到 Gemini 获取 URI
-        uploaded_file = genai.upload_file(tmp_path, mime_type="image/jpeg")
-        
-        # 构建提示词
         prompt = """
         你现在是冯老的随身AI植物学家替身。请仔细观察这张植物照片，提供详尽的专家级鉴定：
         1. **植物标准名称**：中文名、英文常用名、精准的拉丁学名。
@@ -58,18 +49,23 @@ def ask_gemini_botanist(image_url):
         请用亲切、专业、条理清晰的中文回复。
         """
         
-        model = genai.GenerativeModel("gemini-1.5-pro")
-        # 传递 URI 给大模型
-        response = model.generate_content([uploaded_file, prompt])
+        # 【重要修改 2】将模型切换为 gemini-1.5-flash (免绑卡、响应快)
+        # 如果日后需要付费版高级能力，可改回 gemini-1.5-pro
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
-        # 清理临时文件
-        os.remove(tmp_path)
+        # 【重要修改 3】generate_content 接收一个包含图片和提示词的列表
+        response = model.generate_content([image_part, prompt])
         
         return response.text
     except Exception as e:
         return f"❌ 替身在看图时眼睛开小差了: {str(e)}"
 
 if __name__ == "__main__":
+    # 如果存在机器人自己发言的变量，增加防循环判断（没设此变量也不影响核心运行）
+    if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
+        print("检测到是机器人自己的评论，跳过避免死循环。")
+        exit(0)
+
     issue_body = os.environ.get("ISSUE_BODY", "")
     issue_num = os.environ.get("ISSUE_NUMBER", "")
     repo = os.environ.get("REPOSITORY", "")
