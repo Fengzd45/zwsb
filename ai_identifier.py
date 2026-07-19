@@ -1,21 +1,17 @@
 import os
 import re
 import requests
+import google.generativeai as genai
 
 # 1. 防死循环
 if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     print("检测到是机器人自己的评论，跳过避免死循环。")
     exit(0)
 
-# 2. 【关键修复】根据官方提示，必须从 preview 导入！
-from vertexai.preview.generative_models import GenerativeModel, Part
-import vertexai
-
-# 3. 读取 API Key 并初始化
+# 2. 配置原生 API Key
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
-    # 使用 preview 模式初始化
-    vertexai.init(project="", location="us-central1", api_key=GEMINI_KEY)
+    genai.configure(api_key=GEMINI_KEY)
 else:
     print("错误：未检测到 GEMINI_API_KEY 环境变量！")
     exit(1)
@@ -39,13 +35,16 @@ def reply_to_issue(issue_number, repo, token, message):
     return response.status_code
 
 def ask_gemini_botanist(image_url):
-    """识别植物"""
+    """识别植物 (使用原生库 gemini-1.5-flash)"""
     try:
         # 下载图片
         img_data = requests.get(image_url, timeout=30).content
         
-        # 转换为 Gemini 专用格式
-        image_part = Part.from_data(img_data, mime_type="image/jpeg")
+        # 【官方标准姿势】直接传二进制数据
+        image_part = {
+            "mime_type": "image/jpeg",
+            "data": img_data
+        }
         
         prompt = """
         你现在是冯老的随身AI植物学家替身。请仔细观察这张植物照片，提供详尽的专家级鉴定：
@@ -57,8 +56,10 @@ def ask_gemini_botanist(image_url):
         请用亲切、专业、条理清晰的中文回复。
         """
         
-        # 使用 preview 包下的模型
-        model = GenerativeModel("gemini-1.5-flash")
+        # 使用原生 Gemini 模型（Flash 响应最快）
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        
+        # 直接传列表
         response = model.generate_content([image_part, prompt])
         
         return response.text
