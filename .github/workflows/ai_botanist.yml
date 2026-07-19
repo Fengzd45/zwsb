@@ -4,8 +4,9 @@ on:
   issues:
     types: [opened, edited]
   issue_comment:
-    types: [created, edited]  # 核心升级：只要您在评论区发照片，也立刻触发识别！
+    types: [created, edited]
 
+# 赋予机器人操作 Issue 的权限
 permissions:
   issues: write
   contents: write
@@ -24,16 +25,21 @@ jobs:
           python-version: '3.10'
 
       - name: 安装 AI 核心依赖
+        # 加入 --upgrade 保证最新底层库不冲突
         run: |
-          pip install google-generativeai requests
+          pip install --upgrade google-generativeai requests
 
       - name: 启动大模型替身进行识别
+        # 加入 5 分钟超时限制，防止网络卡死
+        timeout-minutes: 5
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # 核心升级：优先读取最新评论内容，如果没有评论则读取主楼内容
+          # 优先读取最新评论内容，如果没有评论则读取主楼内容
           ISSUE_BODY: ${{ github.event.comment.body || github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 新增：传入评论者的名字，用于避免机器人自己触发自己
+          COMMENTER_USER: ${{ github.event.comment.user.login || '' }}
         run: |
           python ai_identifier.py
