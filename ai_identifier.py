@@ -9,7 +9,7 @@ if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     exit(0)
 
 def extract_image_urls(text):
-    """升级版全渠道抓图逻辑"""
+    """全渠道抓图逻辑"""
     md_urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
     html_urls = re.findall(r'<img [^>]*src="([^"]+)"', text)
     raw_urls = re.findall(r'(https?://[^\s\)]+\.(?:jpg|jpeg|png|webp|gif))', text, re.IGNORECASE)
@@ -56,23 +56,17 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 4. 🚀【科学轮询清单】：把免费配额大、响应最稳的 1.5 放在首位避开 429
+            # 4. 🚀 精准匹配支持 AQ 密钥的正式模型线
             test_routes = [
-                {"version": "v1beta", "model": "gemini-1.5-flash"},     # 路线一：Beta通道经典1.5（最不易出429）
-                {"version": "v1", "model": "gemini-1.5-flash"},         # 路线二：稳定通道经典1.5
-                {"version": "v1beta", "model": "gemini-2.0-flash-exp"}, # 路线三：2.0 预览版
-                {"version": "v1", "model": "gemini-2.0-flash"},         # 路线四：2.0 正式版（极易触发免费层频率限制）
+                {"version": "v1beta", "model": "gemini-2.5-flash"},   # 路线一：最新的 2.5 闪电模型
+                {"version": "v1beta", "model": "gemini-1.5-flash"},   # 路线二：Beta通道标准1.5
+                {"version": "v1", "model": "gemini-1.5-flash"},       # 路线三：稳定版通道标准1.5
             ]
             
             success = False
             error_logs = []
             
-            # ⚠️【核心修正】：废除错误的 Bearer，使用官方标准专用的 x-goog-api-key 头
-            headers = {
-                "Content-Type": "application/json",
-                "x-goog-api-key": GEMINI_KEY
-            }
-            
+            headers = {"Content-Type": "application/json"}
             payload = {
                 "contents": [{
                     "parts": [
@@ -90,16 +84,11 @@ if __name__ == "__main__":
             for route in test_routes:
                 ver = route["version"]
                 mod = route["model"]
-                url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent"
+                # 兼容性最好的标准请求格式
+                url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent?key={GEMINI_KEY}"
                 
-                print(f"正在以新版规范尝试叩门：{ver}/{mod} ...")
+                print(f"正在尝试叩门：{ver}/{mod}...")
                 res = requests.post(url, json=payload, headers=headers, timeout=40)
-                
-                # 如果标准 Header 方式被部分老通道拒绝，尝试降级为 URL 传参方式再试一次
-                if res.status_code != 200:
-                    backup_url = f"{url}?key={GEMINI_KEY}"
-                    backup_headers = {"Content-Type": "application/json"}
-                    res = requests.post(backup_url, json=payload, headers=backup_headers, timeout=40)
                 
                 if res.status_code == 200:
                     response_data = res.json()
