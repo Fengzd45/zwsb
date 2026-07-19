@@ -26,13 +26,12 @@ def reply_to_issue(issue_number, repo, token, message):
     return response.status_code
 
 def ask_gemini_botanist_raw(image_url, api_key):
-    """绕过死板的 SDK，直接用原生底层网络请求叩门"""
+    """使用新版 AQ 密钥专用通道"""
     try:
-        # 下载图片并转为 Base64 编码
+        # 下载图片并转为 Base64
         img_data = requests.get(image_url, timeout=30).content
         base64_image = base64.b64encode(img_data).decode('utf-8')
         
-        # 组装标准的 Gemini 视觉请求体
         prompt_text = """
         你现在是冯老的随身AI植物学家替身。请仔细观察这张植物照片，提供详尽的专家级鉴定：
         1. **植物标准名称**：中文名、英文常用名、精准的拉丁学名。
@@ -52,30 +51,41 @@ def ask_gemini_botanist_raw(image_url, api_key):
             }]
         }
 
-        # 🚀 【通道 A】：尝试标准 API Key 挂载路由
-        url_a = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        res_a = requests.post(url_a, json=payload, headers={"Content-Type": "application/json"}, timeout=30)
+        # 🚀 【核心适配】：针对 AQ 密钥，改用统一的通用 API 兼容通道，不再强冲 Google 原生 OAuth 门禁
+        # 同时支持通过环境变量 GEMINI_API_BASE 自定义国内中转或飞书专线网关
+        api_base = os.environ.get("GEMINI_API_BASE", "https://api.openai-hk.com/v1") # 默认尝试通用兼容代理，如有特定网关可在此修改
         
-        if res_a.status_code == 200:
-            return res_a.json()['candidates'][0]['content']['parts'][0]['text']
-            
-        # 🚀 【通道 B】：如果通道 A 失败，自动切换为安全 Token 承载路由（Bearer 模式）
-        url_b = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
-        headers_b = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        res_b = requests.post(url_b, json=payload, headers=headers_b, timeout=30)
+        if "googleapis.com" in api_base or api_base == "https://api.openai-hk.com/v1":
+            # 如果是走通用标准路由
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+            headers = {"Content-Type": "application/json"}
+        else:
+            # 如果走专线网关，将 AQ 钥匙以标准 Bearer 令牌形式送入
+            url = f"{api_base}/chat/completions"
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+            # 转换为聊天格式适配专线
+            payload = {
+                "model": "gemini-1.5-flash",
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt_text},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
+                    ]
+                }]
+            }
+
+        res = requests.post(url, json=payload, headers=headers, timeout=30)
         
-        if res_b.status_code == 200:
-            return res_b.json()['candidates'][0]['content']['parts'][0]['text']
+        if res.status_code == 200:
+            if "chat/completions" in url:
+                return res.json()['choices'][0]['message']['content']
+            return res.json()['candidates'][0]['content']['parts'][0]['text']
             
-        # 如果两条路都报错，把底层的真实现场打印出来
-        return (
-            f"❌ 两条原生通道均未通关，底层反馈如下：\n"
-            f"**通道 A 状态码 ({res_a.status_code}):** `{res_a.text[:200]}`\n"
-            f"**通道 B 状态码 ({res_b.status_code}):** `{res_b.text[:200]}`"
-        )
+        return f"❌ 专线通道反馈状态码 ({res.status_code}): `{res.text[:300]}`"
         
     except Exception as e:
         return f"❌ 建立直连通道时发生意外中断: {str(e)}"
@@ -102,9 +112,9 @@ if __name__ == "__main__":
         target_image = image_urls[0]
         
         # 占位提示
-        reply_to_issue(issue_num, repo, token, "🔍 **直连通道已建立，替身正在通过新版密钥叩门，请稍候...**")
+        reply_to_issue(issue_num, repo, token, "🔍 **新版 AQ 密钥专线已铺设，替身正在重新叩门，请稍候...**")
         
-        # 执行直连识别
+        # 执行识别
         result = ask_gemini_botanist_raw(target_image, GEMINI_KEY)
         
         # 回复最终结果
