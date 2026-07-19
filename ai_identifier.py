@@ -53,10 +53,10 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 🚀 修正为官方最核心、完全存在的两大真实免费通道
+            # 🚀 准确的官方路径组合
             real_models = [
-                "v1/models/gemini-2.0-flash",       # 首选：2.0 正式版
-                "v1/models/gemini-1.5-flash"        # 备用：修正为 v1 正式通道的 1.5 版
+                "v1beta/models/gemini-1.5-flash",   # 通道一：1.5-flash（独立配额，最不易拥堵）
+                "v1/models/gemini-2.0-flash",       # 通道二：2.0-flash
             ]
             
             payload = {
@@ -74,7 +74,7 @@ if __name__ == "__main__":
             for model_path in real_models:
                 url = f"https://generativelanguage.googleapis.com/{model_path}:generateContent?key={GEMINI_KEY}"
                 
-                # 增强版避峰重试机制
+                # 针对 GitHub 共享 IP 的深度退避重试
                 for attempt in range(3): 
                     print(f"正在叩门：{model_path} (第 {attempt+1} 次尝试)...")
                     res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=40)
@@ -88,15 +88,14 @@ if __name__ == "__main__":
                         break
                         
                     elif res.status_code == 429:
-                        # 随机等待 10~20 秒，打乱 GitHub Actions 的群发并发频率
-                        wait_time = random.randint(10, 20)
-                        print(f"遇到免费层节点拥堵 (429)，随机避峰等待 {wait_time} 秒后重试...")
-                        if attempt == 2:  # 如果最后一次重试也失败了，确保记入日志
-                            error_logs.append(f"• {model_path} 拒入: 状态码 429 (连续3次拥堵限制)")
+                        # 429 时延长避峰等待（20~30秒），极大概率能冲过风控
+                        wait_time = random.randint(20, 30)
+                        print(f"遇到免费层节点拥堵 (429)，避峰等待 {wait_time} 秒...")
+                        if attempt == 2:
+                            error_logs.append(f"• {model_path} 拒入: 状态码 429 (并发/频率超限)")
                         time.sleep(wait_time)
                         
                     else:
-                        # 记录其他死错误（如 404/400）
                         error_logs.append(f"• {model_path} 拒入: 状态码 {res.status_code}, 详情: {res.text[:100]}")
                         break 
                 
