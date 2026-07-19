@@ -1,34 +1,34 @@
 import os
 import re
 import requests
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part
 
-# 1. 如果存在机器人自己发言的变量，防死循环
+# 1. 防死循环
 if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     print("检测到是机器人自己的评论，跳过避免死循环。")
     exit(0)
 
-# 2. 读取 GitHub Secrets 里的 AQ 开头的 API Key
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+# 2. 【关键修复】根据官方提示，必须从 preview 导入！
+from vertexai.preview.generative_models import GenerativeModel, Part
+import vertexai
 
-# 【核心改动】不需要 genai.configure，而是使用 vertexai 初始化
-# 注意：Gemini 的默认服务端点在 us-central1
+# 3. 读取 API Key 并初始化
+GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
 if GEMINI_KEY:
+    # 使用 preview 模式初始化
     vertexai.init(project="", location="us-central1", api_key=GEMINI_KEY)
 else:
     print("错误：未检测到 GEMINI_API_KEY 环境变量！")
     exit(1)
 
 def extract_image_urls(text):
-    """从 Issue 的 Markdown 文本中提取出用户上传的图片链接"""
+    """从 Issue 的 Markdown 文本中提取图片链接"""
     urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
     if not urls:
         urls = re.findall(r'<img.*?src="(.*?)"', text)
     return urls
 
 def reply_to_issue(issue_number, repo, token, message):
-    """让替身在 GitHub Issue 下方发表评论回复"""
+    """GitHub 评论回复"""
     url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments"
     headers = {
         "Authorization": f"token {token}",
@@ -39,12 +39,12 @@ def reply_to_issue(issue_number, repo, token, message):
     return response.status_code
 
 def ask_gemini_botanist(image_url):
-    """驱动大模型替身睁眼看图并识别 (使用 Vertex AI SDK)"""
+    """识别植物"""
     try:
-        # 下载 Issue 中的图片
+        # 下载图片
         img_data = requests.get(image_url, timeout=30).content
         
-        # 【Vertex AI 专用格式】使用官方 Part 类封装二进制数据
+        # 转换为 Gemini 专用格式
         image_part = Part.from_data(img_data, mime_type="image/jpeg")
         
         prompt = """
@@ -57,10 +57,8 @@ def ask_gemini_botanist(image_url):
         请用亲切、专业、条理清晰的中文回复。
         """
         
-        # 初始化模型 (Vertex AI 下 flash 模型同样免绑卡，响应极快)
+        # 使用 preview 包下的模型
         model = GenerativeModel("gemini-1.5-flash")
-        
-        # 发送请求
         response = model.generate_content([image_part, prompt])
         
         return response.text
@@ -82,15 +80,18 @@ if __name__ == "__main__":
     image_urls = extract_image_urls(issue_body)
     
     if not image_urls:
-        reply_to_issue(issue_num, repo, token, "🤖 **替身播报**：冯老，您建了识别单，但保险柜里没看到您贴的植物照片呀，请把照片直接拖进对话框里。")
+        reply_to_issue(issue_num, repo, token, "🤖 **替身播报**：冯老，您建了识别单，但没看到照片，请把照片直接拖进对话框里。")
     else:
         target_image = image_urls[0]
         print(f"正在识别图片: {target_image}")
         
+        # 占位提示
         reply_to_issue(issue_num, repo, token, "🔍 **替身正在闭眼搜寻知识库，请稍候...**")
         
+        # 核心识别
         result = ask_gemini_botanist(target_image)
         
+        # 最终答复
         final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{result}"
         reply_to_issue(issue_num, repo, token, final_reply)
         print("鉴定报告已成功送达 Issue 评论区！")
