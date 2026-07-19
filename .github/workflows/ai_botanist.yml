@@ -25,12 +25,11 @@ jobs:
           python-version: '3.10'
 
       - name: 安装 AI 核心依赖
-        # 【关键修改】安装了 vertexai 和 google-cloud-aiplatform
+        # 换回原生 Google Generative AI 库，绝对不使用 vertexai，彻底避开 OAuth 认证问题
         run: |
-          pip install --upgrade google-cloud-aiplatform vertexai requests
+          pip install --upgrade google-generativeai requests
 
       - name: 启动大模型替身进行识别
-        # 防止网络卡死，设置5分钟超时
         timeout-minutes: 5
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
