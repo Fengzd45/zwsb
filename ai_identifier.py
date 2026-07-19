@@ -9,7 +9,7 @@ if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     exit(0)
 
 def extract_image_urls(text):
-    """从 Issue 文本中提取图片链接（同时支持电脑端 Markdown 和手机端 HTML）"""
+    """从 Issue 文本中提取图片链接"""
     md_urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
     html_urls = re.findall(r'<img [^>]*src="([^"]+)"', text)
     return md_urls + html_urls
@@ -26,10 +26,9 @@ def reply_to_issue(issue_number, repo, token, message):
     return response.status_code
 
 def ask_gemini_botanist(image_url, api_key):
-    """识别植物 (使用新版密钥认证方式)"""
+    """识别植物"""
     try:
-        # 【核心升级】采用适应新版密钥的客户端初始化方式，避开旧版 client 的 401 限制
-        from google.generativeai import client
+        # 显式配置
         genai.configure(api_key=api_key)
         
         # 下载图片
@@ -39,56 +38,55 @@ def ask_gemini_botanist(image_url, api_key):
             "data": img_data
         }
         
-        prompt = """
-        你现在是冯老的随身AI植物学家替身。请仔细观察这张植物照片，提供详尽的专家级鉴定：
-        1. **植物标准名称**：中文名、英文常用名、精准的拉丁学名。
-        2. **植物分类**：科、属。并明确归类为 "Grass", "Shrub", "Tree", "Conifer" 中的哪一种。
-        3. **外观特征**：叶形、花期、果实特点等。
-        4. **健康状态评估**：从画面上看，这株植物是否有病虫害、缺水或其他生长问题？如果有，请给出调理建议。
-        
-        请用亲切、专业、条理清晰的中文回复。
-        """
+        prompt = "你现在是冯老的随身AI植物学家替身。请仔细观察这张植物照片，提供详尽的中文标准名称、科属及外观特征说明。"
         
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content([image_part, prompt])
         return response.text
         
     except Exception as e:
-        print(f"Gemini API 详细报错: {e}")
-        return f"❌ 替身在看图时眼睛开小差了: {str(e)}"
+        return f"❌ 替身看图时被拒门外，详细报错:\n`{str(e)}`"
 
 if __name__ == "__main__":
-    GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
+    GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
     issue_body = os.environ.get("ISSUE_BODY", "")
     issue_num = os.environ.get("ISSUE_NUMBER", "")
     repo = os.environ.get("REPOSITORY", "")
     token = os.environ.get("GITHUB_TOKEN", "")
     
-    if not GEMINI_KEY:
-        print("错误：未检测到 GEMINI_API_KEY 环境变量！")
-        if issue_num and repo and token:
-            reply_to_issue(issue_num, repo, token, "❌ **替身罢工**：云端未获取到有效的密钥。")
-        exit(1)
-
     if not issue_body or not issue_num:
         print("未检测到有效的 Issue 内容。")
         exit(0)
         
-    image_urls = extract_image_urls(issue_body)
+    # 【核心安全排查：透视这把钥匙】
+    key_report = ""
+    if not GEMINI_KEY:
+        key_report = "❌ **密钥透视报告**：云端根本没有拿到任何密钥，变量为空！"
+    else:
+        clean_key = GEMINI_KEY.strip()
+        has_space = "是" if len(GEMINI_KEY) != len(clean_key) else "否"
+        key_report = (
+            f"🔍 **密钥安全透视报告**：\n"
+            f"- 接收到的密钥总长度：{len(GEMINI_KEY)} 位\n"
+            f"- 密钥开头前两个字母是：`{GEMINI_KEY[:2]}`\n"
+            f"- 密钥结尾两个字母是：`{GEMINI_KEY[-2:]}`\n"
+            f"- 是否包含前后隐形空格或换行：`{has_space}`\n"
+            f"*(注：此报告不泄漏中间真实密码，安全可查)*"
+        )
     
+    # 先把透视报告发到评论区，让我们看看到底送进去的是个什么
+    reply_to_issue(issue_num, repo, token, key_report)
+    
+    if not GEMINI_KEY:
+        exit(1)
+        
+    image_urls = extract_image_urls(issue_body)
     if not image_urls:
-        reply_to_issue(issue_num, repo, token, "🤖 **替身播报**：冯老，您建了识别单，但没看到照片，请把照片直接拖进对话框里。")
+        reply_to_issue(issue_num, repo, token, "🤖 没看到照片代码，请重新拖入。")
     else:
         target_image = image_urls[0]
-        print(f"正在识别图片: {target_image}")
+        # 使用去除了可能存在的前后空格的干净密钥去请求
+        result = ask_gemini_botanist(target_image, GEMINI_KEY.strip())
         
-        # 占位提示
-        reply_to_issue(issue_num, repo, token, "🔍 **替身正在闭眼搜寻知识库，请稍候...**")
-        
-        # 核心识别（传入新版AQ钥匙）
-        result = ask_gemini_botanist(target_image, GEMINI_KEY)
-        
-        # 最终答复
-        final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{result}"
+        final_reply = f"🌿 **【AI植物学家替身鉴定报告结果】** 🌿\n\n{result}"
         reply_to_issue(issue_num, repo, token, final_reply)
-        print("鉴定报告已成功送达 Issue 评论区！")
