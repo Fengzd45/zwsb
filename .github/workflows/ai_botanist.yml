@@ -2,15 +2,15 @@ name: AI 植物学家在线识别
 
 on:
   issues:
-    types: [opened, edited]  # 当您新建 Issue 或修改 Issue 时触发
+    types: [opened, edited]
 
 permissions:
-  issues: write  # 允许 AI 在 Issue 下方留言回复
-  contents: write  # 允许 AI 修改仓库文件（如后续自动归档）
+  issues: write
+  contents: write
 
 jobs:
   identify-plant:
-    if: contains(github.event.issue.title, '识别') || contains(github.event.issue.body, '![image]')
+    # 去掉了严格的过滤条件，只要是新建或编辑 Issue 就直接运行
     runs-on: ubuntu-latest
     
     steps:
