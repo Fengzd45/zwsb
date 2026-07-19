@@ -56,20 +56,21 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 4. 🚀【全新模型与通路】：完美支持 AQ 密钥的官方标准格式
+            # 4. 🚀【科学轮询清单】：把免费配额大、响应最稳的 1.5 放在首位避开 429
             test_routes = [
-                {"version": "v1", "model": "gemini-2.0-flash"},         # 官方首选稳定 2.0 通道
-                {"version": "v1", "model": "gemini-1.5-flash"},         # 官方经典 1.5 稳定通道
-                {"version": "v1beta", "model": "gemini-2.0-flash-exp"}, # 预览通道试验模型
+                {"version": "v1beta", "model": "gemini-1.5-flash"},     # 路线一：Beta通道经典1.5（最不易出429）
+                {"version": "v1", "model": "gemini-1.5-flash"},         # 路线二：稳定通道经典1.5
+                {"version": "v1beta", "model": "gemini-2.0-flash-exp"}, # 路线三：2.0 预览版
+                {"version": "v1", "model": "gemini-2.0-flash"},         # 路线四：2.0 正式版（极易触发免费层频率限制）
             ]
             
             success = False
             error_logs = []
             
-            # ⚠️【关键修正】：将 AQ 密钥从 URL 中移除，规范地放入 Authorization Header 中
+            # ⚠️【核心修正】：废除错误的 Bearer，使用官方标准专用的 x-goog-api-key 头
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {GEMINI_KEY}"
+                "x-goog-api-key": GEMINI_KEY
             }
             
             payload = {
@@ -89,11 +90,16 @@ if __name__ == "__main__":
             for route in test_routes:
                 ver = route["version"]
                 mod = route["model"]
-                # 干净的请求路径，不挂载任何明文 key 后缀
                 url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent"
                 
-                print(f"正在尝试以安全通道叩门：{ver} 版本的 {mod} 模型...")
+                print(f"正在以新版规范尝试叩门：{ver}/{mod} ...")
                 res = requests.post(url, json=payload, headers=headers, timeout=40)
+                
+                # 如果标准 Header 方式被部分老通道拒绝，尝试降级为 URL 传参方式再试一次
+                if res.status_code != 200:
+                    backup_url = f"{url}?key={GEMINI_KEY}"
+                    backup_headers = {"Content-Type": "application/json"}
+                    res = requests.post(backup_url, json=payload, headers=backup_headers, timeout=40)
                 
                 if res.status_code == 200:
                     response_data = res.json()
