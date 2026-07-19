@@ -56,15 +56,12 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 4. 🚀【核心突破】：多版本、多模型全自动轮询叩门
-            # 把当前所有可能通关的门都列在这里，程序会自动挨个试
+            # 4. 🚀【核心修正】：精准匹配官方最新的通道与模型映射
             test_routes = [
-                {"version": "v1beta", "model": "gemini-2.5-flash"},
-                {"version": "v1beta", "model": "gemini-2.0-flash"},
-                {"version": "v1", "model": "gemini-2.5-flash"},
-                {"version": "v1", "model": "gemini-2.0-flash"},
-                {"version": "v1beta", "model": "gemini-1.5-flash-latest"},
-                {"version": "v1", "model": "gemini-1.5-flash-latest"},
+                {"version": "v1", "model": "gemini-2.0-flash"},         # 稳定通道 2.0 旗舰多模态
+                {"version": "v1", "model": "gemini-1.5-flash"},         # 稳定通道 1.5 经典多模态
+                {"version": "v1beta", "model": "gemini-2.0-flash-exp"}, # 预览通道 2.0 实验模型
+                {"version": "v1beta", "model": "gemini-1.5-flash"},     # 预览通道 1.5 模型
             ]
             
             success = False
