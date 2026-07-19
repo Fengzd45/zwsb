@@ -3,6 +3,8 @@ name: AI 植物学家在线识别
 on:
   issues:
     types: [opened, edited]
+  issue_comment:
+    types: [created, edited]  # 核心升级：只要您在评论区发照片，也立刻触发识别！
 
 permissions:
   issues: write
@@ -10,7 +12,6 @@ permissions:
 
 jobs:
   identify-plant:
-    # 去掉了严格的过滤条件，只要是新建或编辑 Issue 就直接运行
     runs-on: ubuntu-latest
     
     steps:
@@ -29,7 +30,8 @@ jobs:
       - name: 启动大模型替身进行识别
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          ISSUE_BODY: ${{ github.event.issue.body }}
+          # 核心升级：优先读取最新评论内容，如果没有评论则读取主楼内容
+          ISSUE_BODY: ${{ github.event.comment.body || github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
