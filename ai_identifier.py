@@ -26,15 +26,14 @@ def reply_to_issue(issue_number, repo, token, message):
     return response.status_code
 
 def ask_gemini_botanist(image_url, api_key):
-    """识别植物 (使用原生库 gemini-1.5-flash)"""
+    """识别植物 (使用新版密钥认证方式)"""
     try:
-        # 显式配置密钥，确保万无一失
+        # 【核心升级】采用适应新版密钥的客户端初始化方式，避开旧版 client 的 401 限制
+        from google.generativeai import client
         genai.configure(api_key=api_key)
         
         # 下载图片
         img_data = requests.get(image_url, timeout=30).content
-        
-        # 官方标准姿势：二进制数据
         image_part = {
             "mime_type": "image/jpeg",
             "data": img_data
@@ -59,7 +58,6 @@ def ask_gemini_botanist(image_url, api_key):
         return f"❌ 替身在看图时眼睛开小差了: {str(e)}"
 
 if __name__ == "__main__":
-    # 正确在入口处读取所有环境变量
     GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
     issue_body = os.environ.get("ISSUE_BODY", "")
     issue_num = os.environ.get("ISSUE_NUMBER", "")
@@ -69,7 +67,7 @@ if __name__ == "__main__":
     if not GEMINI_KEY:
         print("错误：未检测到 GEMINI_API_KEY 环境变量！")
         if issue_num and repo and token:
-            reply_to_issue(issue_num, repo, token, "❌ **替身罢工**：云端未获取到有效的密钥 `GEMINI_API_KEY`。")
+            reply_to_issue(issue_num, repo, token, "❌ **替身罢工**：云端未获取到有效的密钥。")
         exit(1)
 
     if not issue_body or not issue_num:
@@ -87,7 +85,7 @@ if __name__ == "__main__":
         # 占位提示
         reply_to_issue(issue_num, repo, token, "🔍 **替身正在闭眼搜寻知识库，请稍候...**")
         
-        # 核心识别（传入正确的钥匙）
+        # 核心识别（传入新版AQ钥匙）
         result = ask_gemini_botanist(target_image, GEMINI_KEY)
         
         # 最终答复
