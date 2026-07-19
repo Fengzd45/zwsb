@@ -7,35 +7,28 @@ def identify_plant(image_path, text_prompt="请识别图中的植物并输出详
     with open(image_path, "rb") as image_file:
         image_bytes = base64.b64encode(image_file.read()).decode("utf-8")
         
-    # 2. 使用正确的 Gemini API 端点
-    model = "gemini-2.5-flash"  # 或者 gemini-1.5-flash
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+    # 2. Use the modern 2026 Interactions API endpoint
+    url = "https://generativelanguage.googleapis.com/v1beta/interactions"
     
-    # 3. API key 通过 header 传递
+    # 3. Securely pass the AQ. key via headers
     gemini_key = os.environ.get("GEMINI_API_KEY")
-    if not gemini_key:
-        return "错误：未设置 GEMINI_API_KEY 环境变量"
-    
     headers = {
         "x-goog-api-key": gemini_key,
-        "Content-Type": "application/json"
+        "Content-Type": application/json"
     }
     
-    # 4. 正确的请求体格式
+    # 4. Construct the Interactions API payload format
     payload = {
-        "contents": [
+        "model": "gemini-2.5-flash",  # Or "gemini-3.5-flash" depending on tier
+        "input": [
             {
-                "parts": [
-                    {
-                        "text": text_prompt
-                    },
-                    {
-                        "inline_data": {
-                            "mime_type": "image/jpeg",
-                            "data": image_bytes
-                        }
-                    }
-                ]
+                "text": text_prompt
+            },
+            {
+                "inline_data": {
+                    "mime_type": "image/jpeg",
+                    "data": image_bytes
+                }
             }
         ]
     }
@@ -44,16 +37,12 @@ def identify_plant(image_path, text_prompt="请识别图中的植物并输出详
     
     if response.status_code == 200:
         result = response.json()
+        # The new API packages outputs inside an array of steps
+        # Extracting text from the final output step
         try:
-            # 提取生成的文本内容
-            output_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            output_text = result["outputs"][-1]["text"]
             return output_text
-        except (KeyError, IndexError) as e:
-            return f"解析响应失败: {result}, 错误: {e}"
+        except (KeyError, IndexError):
+            return f"解析响应失败: {result}"
     else:
         return f"请求失败，状态码: {response.status_code}, 错误信息: {response.text}"
-
-# 使用示例
-if __name__ == "__main__":
-    result = identify_plant("your_plant_image.jpg")
-    print(result)
