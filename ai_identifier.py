@@ -3,8 +3,8 @@ import re
 import base64
 import requests
 import time
+import random
 
-# 1. 防机器人自我评论死循环
 if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     print("检测到是机器人自己的评论，跳过避免死循环。")
     exit(0)
@@ -41,7 +41,6 @@ if __name__ == "__main__":
         target_image = image_urls[0]
         
         try:
-            # 2. 下载图片并转化为 Base64 编码
             img_res = requests.get(target_image, timeout=30)
             img_base64 = base64.b64encode(img_res.content).decode('utf-8')
             
@@ -54,10 +53,10 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 3. 剥离所有幻觉，只写官方百分百存在的真实路径
+            # 🚀 修正为官方最核心、完全存在的两大真实免费通道
             real_models = [
-                "v1/models/gemini-2.0-flash",       # 官方最新 2.0 正式版
-                "v1beta/models/gemini-1.5-flash"    # 官方最稳 1.5 经典版 (备用)
+                "v1/models/gemini-2.0-flash",       # 首选：2.0 正式版
+                "v1/models/gemini-1.5-flash"        # 备用：修正为 v1 正式通道的 1.5 版
             ]
             
             payload = {
@@ -75,9 +74,9 @@ if __name__ == "__main__":
             for model_path in real_models:
                 url = f"https://generativelanguage.googleapis.com/{model_path}:generateContent?key={GEMINI_KEY}"
                 
-                # 🚀 针对 GitHub Actions 的核心重试机制（破 429 必杀技）
+                # 增强版避峰重试机制
                 for attempt in range(3): 
-                    print(f"正在敲门：{model_path} (第 {attempt+1} 次尝试)...")
+                    print(f"正在叩门：{model_path} (第 {attempt+1} 次尝试)...")
                     res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=40)
                     
                     if res.status_code == 200:
@@ -89,20 +88,23 @@ if __name__ == "__main__":
                         break
                         
                     elif res.status_code == 429:
-                        print(f"遇到 GitHub 节点拥堵 (429)，等待 10 秒后重试...")
-                        time.sleep(10)  # 避开并发高峰，稍微等一下就能进去
+                        # 随机等待 10~20 秒，打乱 GitHub Actions 的群发并发频率
+                        wait_time = random.randint(10, 20)
+                        print(f"遇到免费层节点拥堵 (429)，随机避峰等待 {wait_time} 秒后重试...")
+                        if attempt == 2:  # 如果最后一次重试也失败了，确保记入日志
+                            error_logs.append(f"• {model_path} 拒入: 状态码 429 (连续3次拥堵限制)")
+                        time.sleep(wait_time)
                         
                     else:
-                        # 记录真实的错误详情，不再瞎猜
-                        error_msg = f"• {model_path} 拒入: 状态码 {res.status_code}, 详情: {res.text[:100]}"
-                        error_logs.append(error_msg)
-                        break # 如果是 400 或 404 这种死错误，不重试，直接换下个模型
+                        # 记录其他死错误（如 404/400）
+                        error_logs.append(f"• {model_path} 拒入: 状态码 {res.status_code}, 详情: {res.text[:100]}")
+                        break 
                 
                 if success:
                     break
             
             if not success:
-                log_message = "❌ 替身尝试失败。详细排查日志：\n" + "\n".join(error_logs)
+                log_message = "❌ 替身叩门失败。详细排查日志：\n" + "\n".join(error_logs)
                 reply_to_issue(issue_num, repo, token, log_message)
                 
         except Exception as e:
