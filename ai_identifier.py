@@ -56,18 +56,22 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 4. 🚀【核心修正】：精准匹配官方最新的通道与模型映射
+            # 4. 🚀【全新模型与通路】：完美支持 AQ 密钥的官方标准格式
             test_routes = [
-                {"version": "v1", "model": "gemini-2.0-flash"},         # 稳定通道 2.0 旗舰多模态
-                {"version": "v1", "model": "gemini-1.5-flash"},         # 稳定通道 1.5 经典多模态
-                {"version": "v1beta", "model": "gemini-2.0-flash-exp"}, # 预览通道 2.0 实验模型
-                {"version": "v1beta", "model": "gemini-1.5-flash"},     # 预览通道 1.5 模型
+                {"version": "v1", "model": "gemini-2.0-flash"},         # 官方首选稳定 2.0 通道
+                {"version": "v1", "model": "gemini-1.5-flash"},         # 官方经典 1.5 稳定通道
+                {"version": "v1beta", "model": "gemini-2.0-flash-exp"}, # 预览通道试验模型
             ]
             
             success = False
             error_logs = []
             
-            headers = {"Content-Type": "application/json"}
+            # ⚠️【关键修正】：将 AQ 密钥从 URL 中移除，规范地放入 Authorization Header 中
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {GEMINI_KEY}"
+            }
+            
             payload = {
                 "contents": [{
                     "parts": [
@@ -85,16 +89,16 @@ if __name__ == "__main__":
             for route in test_routes:
                 ver = route["version"]
                 mod = route["model"]
-                url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent?key={GEMINI_KEY}"
+                # 干净的请求路径，不挂载任何明文 key 后缀
+                url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent"
                 
-                print(f"正在尝试叩门：{ver} 版本的 {mod} 模型...")
+                print(f"正在尝试以安全通道叩门：{ver} 版本的 {mod} 模型...")
                 res = requests.post(url, json=payload, headers=headers, timeout=40)
                 
                 if res.status_code == 200:
                     response_data = res.json()
                     response_text = response_data['candidates'][0]['content']['parts'][0]['text']
                     
-                    # 捞到了报告，立刻收工发送
                     final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n*(已自动匹配最佳通路: {ver}/{mod})*\n\n{response_text}"
                     reply_to_issue(issue_num, repo, token, final_reply)
                     success = True
@@ -102,7 +106,6 @@ if __name__ == "__main__":
                 else:
                     error_logs.append(f"• {ver}/{mod} 门拒入 (状态码 {res.status_code})")
             
-            # 如果全部门都试过了还是进不去，打印出尝试清单供排查
             if not success:
                 log_message = "❌ 替身叩门一圈，所有新旧模型通道均未接纳此钥匙，请检查钥匙权限。\n详细排查日志：\n" + "\n".join(error_logs)
                 reply_to_issue(issue_num, repo, token, log_message)
