@@ -3,25 +3,16 @@ import re
 import requests
 import google.generativeai as genai
 
-# 1. 防死循环
+# 1. 防机器人自我评论死循环
 if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     print("检测到是机器人自己的评论，跳过避免死循环。")
     exit(0)
 
-# 2. 配置原生 API Key
-GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_KEY:
-    genai.configure(api_key=GEMINI_KEY)
-else:
-    print("错误：未检测到 GEMINI_API_KEY 环境变量！")
-    exit(1)
-
 def extract_image_urls(text):
-    """从 Issue 的 Markdown 文本中提取图片链接"""
-    urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
-    if not urls:
-        urls = re.findall(r'<img.*?src="(.*?)"', text)
-    return urls
+    """从 Issue 文本中提取图片链接（同时支持电脑端 Markdown 和手机端 HTML）"""
+    md_urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
+    html_urls = re.findall(r'<img [^>]*src="([^"]+)"', text)
+    return md_urls + html_urls
 
 def reply_to_issue(issue_number, repo, token, message):
     """GitHub 评论回复"""
@@ -34,13 +25,16 @@ def reply_to_issue(issue_number, repo, token, message):
     response = requests.post(url, json=data, headers=headers)
     return response.status_code
 
-def ask_gemini_botanist(image_url):
+def ask_gemini_botanist(image_url, api_key):
     """识别植物 (使用原生库 gemini-1.5-flash)"""
     try:
+        # 显式配置密钥，确保万无一失
+        genai.configure(api_key=api_key)
+        
         # 下载图片
         img_data = requests.get(image_url, timeout=30).content
         
-        # 【官方标准姿势】直接传二进制数据
+        # 官方标准姿势：二进制数据
         image_part = {
             "mime_type": "image/jpeg",
             "data": img_data
@@ -56,12 +50,8 @@ def ask_gemini_botanist(image_url):
         请用亲切、专业、条理清晰的中文回复。
         """
         
-        # 使用原生 Gemini 模型（Flash 响应最快）
         model = genai.GenerativeModel("gemini-1.5-flash")
-        
-        # 直接传列表
         response = model.generate_content([image_part, prompt])
-        
         return response.text
         
     except Exception as e:
@@ -69,11 +59,19 @@ def ask_gemini_botanist(image_url):
         return f"❌ 替身在看图时眼睛开小差了: {str(e)}"
 
 if __name__ == "__main__":
+    # 正确在入口处读取所有环境变量
+    GEMINI_KEY = os.environ.get("GEMINI_API_KEY")
     issue_body = os.environ.get("ISSUE_BODY", "")
     issue_num = os.environ.get("ISSUE_NUMBER", "")
     repo = os.environ.get("REPOSITORY", "")
     token = os.environ.get("GITHUB_TOKEN", "")
     
+    if not GEMINI_KEY:
+        print("错误：未检测到 GEMINI_API_KEY 环境变量！")
+        if issue_num and repo and token:
+            reply_to_issue(issue_num, repo, token, "❌ **替身罢工**：云端未获取到有效的密钥 `GEMINI_API_KEY`。")
+        exit(1)
+
     if not issue_body or not issue_num:
         print("未检测到有效的 Issue 内容。")
         exit(0)
@@ -89,8 +87,8 @@ if __name__ == "__main__":
         # 占位提示
         reply_to_issue(issue_num, repo, token, "🔍 **替身正在闭眼搜寻知识库，请稍候...**")
         
-        # 核心识别
-        result = ask_gemini_botanist(target_image)
+        # 核心识别（传入正确的钥匙）
+        result = ask_gemini_botanist(target_image, GEMINI_KEY)
         
         # 最终答复
         final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{result}"
