@@ -1,109 +1,59 @@
 import os
-import re
 import base64
 import requests
 
-# 1. 防机器人自我评论死循环
-if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
-    print("检测到是机器人自己的评论，跳过避免死循环。")
-    exit(0)
-
-def extract_image_urls(text):
-    """全渠道抓图逻辑"""
-    md_urls = re.findall(r'!\[.*?\]\((.*?)\)', text)
-    html_urls = re.findall(r'<img [^>]*src="([^"]+)"', text)
-    raw_urls = re.findall(r'(https?://[^\s\)]+\.(?:jpg|jpeg|png|webp|gif))', text, re.IGNORECASE)
-    return md_urls + html_urls + raw_urls
-
-def reply_to_issue(issue_number, repo, token, message):
-    """GitHub 评论回复通用函数"""
-    url = f"https://api.github.com/repos/{repo}/issues/{issue_number}/comments"
-    headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
-    return requests.post(url, json={"body": message}, headers=headers).status_code
-
-if __name__ == "__main__":
-    GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-    issue_body = os.environ.get("ISSUE_BODY", "")
-    issue_num = os.environ.get("ISSUE_NUMBER", "")
-    repo = os.environ.get("REPOSITORY", "")
-    token = os.environ.get("GITHUB_TOKEN", "")
+def identify_plant(image_path, text_prompt="请识别图中的植物并输出详细报告。"):
+    # 1. Read and encode your image to base64
+    with open(image_path, "rb") as image_file:
+        image_bytes = base64.b64encode(image_file.read()).decode("utf-8")
+        
+    # 2. 使用正确的 Gemini API 端点
+    model = "gemini-2.5-flash"  # 或者 gemini-1.5-flash
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     
-    if not issue_body or not issue_num:
-        exit(0)
-        
-    if not GEMINI_KEY:
-        reply_to_issue(issue_num, repo, token, "❌ 替身播报：未检测到密钥，请检查 GitHub Secrets 配置。")
-        exit(1)
-        
-    image_urls = extract_image_urls(issue_body)
-    if not image_urls:
-        reply_to_issue(issue_num, repo, token, "🤖 替身播报：冯老，未看到您贴的植物照片，请等照片上传完毕后再提交。")
-    else:
-        target_image = image_urls[0]
-        
-        try:
-            # 2. 下载图片并转化为 Base64 编码
-            img_res = requests.get(target_image, timeout=30)
-            img_base64 = base64.b64encode(img_res.content).decode('utf-8')
-            
-            # 3. 冯老专属植物学家剧本
-            prompt_text = (
-                "你现在是冯老的随身AI植物学家替身。请仔细观察这张植物照片，提供详尽的专家级鉴定：\n"
-                "1. **植物标准名称**：中文名、英文常用名、精准的拉丁学名。\n"
-                "2. **植物分类**：科、属。并明确归类为 'Grass', 'Shrub', 'Tree', 'Conifer' 中的哪一种。\n"
-                "3. **外观特征**：叶形、花期、果实特点等。\n"
-                "4. **健康状态评估**：从生长状态看这株植物是否有病虫害或缺水？请给出具体调理建议。\n\n"
-                "请用亲切、专业、条理清晰的中文回复。"
-            )
-            
-            # 4. 🚀 精准匹配支持 AQ 密钥的正式模型线
-            test_routes = [
-                {"version": "v1beta", "model": "gemini-2.5-flash"},   # 路线一：最新的 2.5 闪电模型
-                {"version": "v1beta", "model": "gemini-1.5-flash"},   # 路线二：Beta通道标准1.5
-                {"version": "v1", "model": "gemini-1.5-flash"},       # 路线三：稳定版通道标准1.5
-            ]
-            
-            success = False
-            error_logs = []
-            
-            headers = {"Content-Type": "application/json"}
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": prompt_text},
-                        {
-                            "inlineData": {
-                                "mimeType": "image/jpeg",
-                                "data": img_base64
-                            }
+    # 3. API key 通过 header 传递
+    gemini_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_key:
+        return "错误：未设置 GEMINI_API_KEY 环境变量"
+    
+    headers = {
+        "x-goog-api-key": gemini_key,
+        "Content-Type": "application/json"
+    }
+    
+    # 4. 正确的请求体格式
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {
+                        "text": text_prompt
+                    },
+                    {
+                        "inline_data": {
+                            "mime_type": "image/jpeg",
+                            "data": image_bytes
                         }
-                    ]
-                }]
+                    }
+                ]
             }
-            
-            for route in test_routes:
-                ver = route["version"]
-                mod = route["model"]
-                # 兼容性最好的标准请求格式
-                url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent?key={GEMINI_KEY}"
-                
-                print(f"正在尝试叩门：{ver}/{mod}...")
-                res = requests.post(url, json=payload, headers=headers, timeout=40)
-                
-                if res.status_code == 200:
-                    response_data = res.json()
-                    response_text = response_data['candidates'][0]['content']['parts'][0]['text']
-                    
-                    final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n*(已自动匹配最佳通路: {ver}/{mod})*\n\n{response_text}"
-                    reply_to_issue(issue_num, repo, token, final_reply)
-                    success = True
-                    break
-                else:
-                    error_logs.append(f"• {ver}/{mod} 门拒入 (状态码 {res.status_code})")
-            
-            if not success:
-                log_message = "❌ 替身叩门一圈，所有新旧模型通道均未接纳此钥匙，请检查钥匙权限。\n详细排查日志：\n" + "\n".join(error_logs)
-                reply_to_issue(issue_num, repo, token, log_message)
-                
-        except Exception as e:
-            reply_to_issue(issue_num, repo, token, f"❌ 替身看图时遭遇底层阻碍: `{str(e)}`")
+        ]
+    }
+    
+    response = requests.post(url, headers=headers, json=payload)
+    
+    if response.status_code == 200:
+        result = response.json()
+        try:
+            # 提取生成的文本内容
+            output_text = result["candidates"][0]["content"]["parts"][0]["text"]
+            return output_text
+        except (KeyError, IndexError) as e:
+            return f"解析响应失败: {result}, 错误: {e}"
+    else:
+        return f"请求失败，状态码: {response.status_code}, 错误信息: {response.text}"
+
+# 使用示例
+if __name__ == "__main__":
+    result = identify_plant("your_plant_image.jpg")
+    print(result)
