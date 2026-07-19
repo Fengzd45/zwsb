@@ -56,8 +56,19 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 4. 🚀【核心突破】：放弃Bug多多的SDK，强行使用官方 v1 正式版原生大门
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+            # 4. 🚀【核心突破】：多版本、多模型全自动轮询叩门
+            # 把当前所有可能通关的门都列在这里，程序会自动挨个试
+            test_routes = [
+                {"version": "v1beta", "model": "gemini-2.5-flash"},
+                {"version": "v1beta", "model": "gemini-2.0-flash"},
+                {"version": "v1", "model": "gemini-2.5-flash"},
+                {"version": "v1", "model": "gemini-2.0-flash"},
+                {"version": "v1beta", "model": "gemini-1.5-flash-latest"},
+                {"version": "v1", "model": "gemini-1.5-flash-latest"},
+            ]
+            
+            success = False
+            error_logs = []
             
             headers = {"Content-Type": "application/json"}
             payload = {
@@ -74,17 +85,30 @@ if __name__ == "__main__":
                 }]
             }
             
-            # 发送原生请求
-            res = requests.post(url, json=payload, headers=headers, timeout=60)
+            for route in test_routes:
+                ver = route["version"]
+                mod = route["model"]
+                url = f"https://generativelanguage.googleapis.com/{ver}/models/{mod}:generateContent?key={GEMINI_KEY}"
+                
+                print(f"正在尝试叩门：{ver} 版本的 {mod} 模型...")
+                res = requests.post(url, json=payload, headers=headers, timeout=40)
+                
+                if res.status_code == 200:
+                    response_data = res.json()
+                    response_text = response_data['candidates'][0]['content']['parts'][0]['text']
+                    
+                    # 捞到了报告，立刻收工发送
+                    final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n*(已自动匹配最佳通路: {ver}/{mod})*\n\n{response_text}"
+                    reply_to_issue(issue_num, repo, token, final_reply)
+                    success = True
+                    break
+                else:
+                    error_logs.append(f"• {ver}/{mod} 门拒入 (状态码 {res.status_code})")
             
-            if res.status_code == 200:
-                # 解析谷歌标准的返回格式
-                response_data = res.json()
-                response_text = response_data['candidates'][0]['content']['parts'][0]['text']
-                final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{response_text}"
-                reply_to_issue(issue_num, repo, token, final_reply)
-            else:
-                reply_to_issue(issue_num, repo, token, f"❌ 官方大门返回错误 ({res.status_code}): `{res.text[:300]}`")
+            # 如果全部门都试过了还是进不去，打印出尝试清单供排查
+            if not success:
+                log_message = "❌ 替身叩门一圈，所有新旧模型通道均未接纳此钥匙，请检查钥匙权限。\n详细排查日志：\n" + "\n".join(error_logs)
+                reply_to_issue(issue_num, repo, token, log_message)
                 
         except Exception as e:
             reply_to_issue(issue_num, repo, token, f"❌ 替身看图时遭遇底层阻碍: `{str(e)}`")
