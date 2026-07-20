@@ -3,7 +3,6 @@ import re
 import base64
 import requests
 import time
-import random
 
 if os.environ.get("COMMENTER_USER", "") == "github-actions[bot]":
     print("检测到是机器人自己的评论，跳过避免死循环。")
@@ -21,7 +20,8 @@ def reply_to_issue(issue_number, repo, token, message):
     return requests.post(url, json={"body": message}, headers=headers).status_code
 
 if __name__ == "__main__":
-    GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+    # 🔑 只读取硅基流动的 API Key
+    SILICONFLOW_KEY = os.environ.get("SILICONFLOW_API_KEY", "").strip()
     issue_body = os.environ.get("ISSUE_BODY", "")
     issue_num = os.environ.get("ISSUE_NUMBER", "")
     repo = os.environ.get("REPOSITORY", "")
@@ -30,8 +30,8 @@ if __name__ == "__main__":
     if not issue_body or not issue_num:
         exit(0)
         
-    if not GEMINI_KEY:
-        reply_to_issue(issue_num, repo, token, "❌ 替身播报：未检测到密钥，请检查 GitHub Secrets 配置。")
+    if not SILICONFLOW_KEY:
+        reply_to_issue(issue_num, repo, token, "❌ 替身播报：未检测到密钥，请检查 GitHub Secrets 中是否配置了 SILICONFLOW_API_KEY。")
         exit(1)
         
     image_urls = extract_image_urls(issue_body)
@@ -42,6 +42,12 @@ if __name__ == "__main__":
         
         try:
             img_res = requests.get(target_image, timeout=30)
+            img_res.raise_for_status()
+            
+            mime_type = img_res.headers.get("Content-Type", "image/jpeg")
+            if "text/html" in mime_type: 
+                mime_type = "image/jpeg"
+                
             img_base64 = base64.b64encode(img_res.content).decode('utf-8')
             
             prompt_text = (
@@ -53,58 +59,42 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 🚀 准确的官方路径组合
-            real_models = [
-                "v1beta/models/gemini-1.5-flash",   # 通道一：1.5-flash（独立配额，最不易拥堵）
-                "v1/models/gemini-2.0-flash",       # 通道二：2.0-flash
-            ]
-            
-            payload = {
-                "contents": [{
-                    "parts": [
-                        {"text": prompt_text},
-                        {"inlineData": {"mimeType": "image/jpeg", "data": img_base64}}
-                    ]
-                }]
+            # 使用硅基流动稳定且识别强的开源视觉模型
+            sf_url = "https://api.siliconflow.cn/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {SILICONFLOW_KEY}",
+                "Content-Type": "application/json"
             }
             
-            success = False
-            error_logs = []
+            payload = {
+                "model": "Qwen/Qwen2-VL-7B-Instruct",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt_text},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{img_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "temperature": 0.3
+            }
             
-            for model_path in real_models:
-                url = f"https://generativelanguage.googleapis.com/{model_path}:generateContent?key={GEMINI_KEY}"
-                
-                # 针对 GitHub 共享 IP 的深度退避重试
-                for attempt in range(3): 
-                    print(f"正在叩门：{model_path} (第 {attempt+1} 次尝试)...")
-                    res = requests.post(url, json=payload, headers={"Content-Type": "application/json"}, timeout=40)
-                    
-                    if res.status_code == 200:
-                        response_data = res.json()
-                        response_text = response_data['candidates'][0]['content']['parts'][0]['text']
-                        final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{response_text}"
-                        reply_to_issue(issue_num, repo, token, final_reply)
-                        success = True
-                        break
-                        
-                    elif res.status_code == 429:
-                        # 429 时延长避峰等待（20~30秒），极大概率能冲过风控
-                        wait_time = random.randint(20, 30)
-                        print(f"遇到免费层节点拥堵 (429)，避峰等待 {wait_time} 秒...")
-                        if attempt == 2:
-                            error_logs.append(f"• {model_path} 拒入: 状态码 429 (并发/频率超限)")
-                        time.sleep(wait_time)
-                        
-                    else:
-                        error_logs.append(f"• {model_path} 拒入: 状态码 {res.status_code}, 详情: {res.text[:100]}")
-                        break 
-                
-                if success:
-                    break
+            print("正在调用硅基流动 Qwen2-VL 进行植物鉴定...")
+            res = requests.post(sf_url, json=payload, headers=headers, timeout=60)
             
-            if not success:
-                log_message = "❌ 替身叩门失败。详细排查日志：\n" + "\n".join(error_logs)
-                reply_to_issue(issue_num, repo, token, log_message)
+            if res.status_code == 200:
+                response_data = res.json()
+                response_text = response_data['choices'][0]['message']['content']
+                final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{response_text}"
+                reply_to_issue(issue_num, repo, token, final_reply)
+            else:
+                reply_to_issue(issue_num, repo, token, f"❌ 替身叩门失败 (状态码 {res.status_code}): {res.text[:150]}")
                 
         except Exception as e:
             reply_to_issue(issue_num, repo, token, f"❌ 替身看图时遭遇底层阻碍: `{str(e)}`")
