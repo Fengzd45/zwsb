@@ -44,8 +44,9 @@ if __name__ == "__main__":
             img_res = requests.get(target_image, timeout=30)
             img_res.raise_for_status()
             
+            # 获取图片准确的 MIME 类型
             mime_type = img_res.headers.get("Content-Type", "image/jpeg")
-            if "text/html" in mime_type: 
+            if "text/html" in mime_type or not mime_type: 
                 mime_type = "image/jpeg"
                 
             img_base64 = base64.b64encode(img_res.content).decode('utf-8')
@@ -59,43 +60,60 @@ if __name__ == "__main__":
                 "请用亲切、专业、条理清晰的中文回复。"
             )
             
-            # 使用硅基流动稳定且识别强的开源视觉模型
+            # 🚀 候选视觉模型队列（自动轮询，保障100%成功率）
+            candidate_models = [
+                "Qwen/Qwen2.5-VL-7B-Instruct",
+                "Qwen/Qwen2-VL-72B-Instruct",
+                "Pro/Qwen/Qwen2.5-VL-7B-Instruct",
+                "Pro/Qwen/Qwen2-VL-72B-Instruct"
+            ]
+            
             sf_url = "https://api.siliconflow.cn/v1/chat/completions"
             headers = {
                 "Authorization": f"Bearer {SILICONFLOW_KEY}",
                 "Content-Type": "application/json"
             }
             
-            # 🚀 替换为硅基流动当前在线的最新视觉模型名称
-            payload = {
-                "model": "Qwen/Qwen2.5-VL-7B-Instruct",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mime_type};base64,{img_base64}"
+            success = False
+            error_logs = []
+            
+            for model_name in candidate_models:
+                print(f"正在叩门硅基流动模型：{model_name}...")
+                payload = {
+                    "model": model_name,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt_text},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{img_base64}"
+                                    }
                                 }
-                            }
-                        ]
-                    }
-                ],
-                "temperature": 0.3
-            }
+                            ]
+                        }
+                    ],
+                    "temperature": 0.3
+                }
+                
+                res = requests.post(sf_url, json=payload, headers=headers, timeout=60)
+                if res.status_code == 200:
+                    response_data = res.json()
+                    response_text = response_data['choices'][0]['message']['content']
+                    final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{response_text}"
+                    reply_to_issue(issue_num, repo, token, final_reply)
+                    success = True
+                    break
+                else:
+                    print(f"模型 {model_name} 返回错误: {res.status_code}")
+                    error_logs.append(f"• {model_name} (状态码 {res.status_code}): {res.text[:100]}")
+                    time.sleep(1) # 避峰微停
             
-            print("正在调用硅基流动 Qwen2-VL 进行植物鉴定...")
-            res = requests.post(sf_url, json=payload, headers=headers, timeout=60)
-            
-            if res.status_code == 200:
-                response_data = res.json()
-                response_text = response_data['choices'][0]['message']['content']
-                final_reply = f"🌿 **【AI植物学家替身鉴定报告】** 🌿\n\n{response_text}"
-                reply_to_issue(issue_num, repo, token, final_reply)
-            else:
-                reply_to_issue(issue_num, repo, token, f"❌ 替身叩门失败 (状态码 {res.status_code}): {res.text[:150]}")
+            if not success:
+                log_message = "❌ 替身叩门失败。详细日志：\n" + "\n".join(error_logs)
+                reply_to_issue(issue_num, repo, token, log_message)
                 
         except Exception as e:
             reply_to_issue(issue_num, repo, token, f"❌ 替身看图时遭遇底层阻碍: `{str(e)}`")
