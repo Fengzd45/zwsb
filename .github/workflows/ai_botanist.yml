@@ -6,7 +6,6 @@ on:
   issue_comment:
     types: [created, edited]
 
-# 赋予机器人操作 Issue 的读写权限
 permissions:
   issues: write
   contents: write
@@ -25,14 +24,13 @@ jobs:
           python-version: '3.10'
 
       - name: 安装 AI 核心依赖
-        # 换回原生 Google Generative AI 库，绝对不使用 vertexai，彻底避开 OAuth 认证问题
         run: |
-          pip install --upgrade google-generativeai requests
+          pip install --upgrade requests
 
       - name: 启动大模型替身进行识别
         timeout-minutes: 5
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SILICONFLOW_API_KEY: ${{ secrets.SILICONFLOW_API_KEY }}
           ISSUE_BODY: ${{ github.event.comment.body || github.event.issue.body }}
           ISSUE_NUMBER: ${{ github.event.issue.number }}
           REPOSITORY: ${{ github.repository }}
