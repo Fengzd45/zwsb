@@ -66,8 +66,9 @@ if __name__ == "__main__":
                 "Content-Type": "application/json"
             }
             
+            # 🚀 替换为硅基流动当前在线的最新视觉模型名称
             payload = {
-                "model": "Qwen/Qwen2-VL-7B-Instruct",
+                "model": "Qwen/Qwen2.5-VL-7B-Instruct",
                 "messages": [
                     {
                         "role": "user",
